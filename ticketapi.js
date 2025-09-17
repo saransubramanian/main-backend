@@ -1,6 +1,6 @@
 const express = require("express");
 const TicketRoute = express.Router();
-const Db = require("./database"); 
+const Db = require("./database"); // Must export BookingTicket mongoose model
 const multer = require("multer");
 const path = require("path");
 const fs = require("fs");
@@ -12,12 +12,12 @@ if (!fs.existsSync(uploadDir)) {
   fs.mkdirSync(uploadDir);
 }
 
-// Multer storage config
+// Multer storage configuration
 const storage = multer.diskStorage({
-  destination: function (req, file, cb) {
+  destination: (req, file, cb) => {
     cb(null, uploadDir);
   },
-  filename: function (req, file, cb) {
+  filename: (req, file, cb) => {
     const ext = path.extname(file.originalname);
     const uniqueName = `${Date.now()}-${Math.round(Math.random() * 1e9)}${ext}`;
     cb(null, uniqueName);
@@ -39,13 +39,38 @@ const fileFilter = (req, file, cb) => {
     cb(new Error("Unsupported file extension."));
   }
 };
-// Multer upload
+
+// Multer upload instance
 const upload = multer({
   storage,
   fileFilter,
-  limits: { fileSize: 100 * 1024 * 1024 }, 
+  limits: { fileSize: 100 * 1024 * 1024 }, // 100MB
 });
 
+// Helper to parse DD-MM-YYYY to YYYY-MM-DD
+function parseDate(dateString, includeTime = false) {
+  if (!dateString || typeof dateString !== 'string') {
+    return null;
+  }
+
+  // Check if it's already a valid date string that JS can parse
+  if (!isNaN(new Date(dateString).getTime())) {
+    return dateString;
+  }
+
+  // Handle DD-MM-YYYY format
+  const [datePart, timePart] = dateString.split(' ');
+  const [day, month, year] = datePart.split('-');
+  if (day && month && year) {
+    const isoDate = `${year}-${month}-${day}`;
+    if (includeTime && timePart) {
+      return `${isoDate}T${timePart}`;
+    }
+    return isoDate;
+  }
+
+  return null; // Return null if parsing fails
+}
 
 // ==============================
 // 🚀 POST - Create New Ticket
@@ -78,25 +103,15 @@ TicketRoute.post(
       const beforeFile = req.files?.beforeAttachments?.[0]?.filename || "";
       const afterFile = req.files?.afterAttachments?.[0]?.filename || "";
 
-      if (!beforeFile || !afterFile) {
-        return res.status(400).json({
-          message: "Both beforeAttachments and afterAttachments files are required.",
-        });
+      const parsedDateTimeStr = parseDate(DateandTime, true);
+      const parsedDateandTime = parsedDateTimeStr ? new Date(parsedDateTimeStr) : null;
+
+      const parsedEndDateStr = parseDate(expectedEndDate, false);
+      const parsedExpectedEndDate = parsedEndDateStr ? new Date(parsedEndDateStr) : null;
+
+      if ((DateandTime && !parsedDateandTime) || (expectedEndDate && !parsedExpectedEndDate)) {
+        return res.status(400).json({ message: 'Invalid date format. Please use DD-MM-YYYY HH:mm or a valid ISO date format.' });
       }
-
-      // Helper function to convert DD-MM-YYYY to YYYY-MM-DD
-      const parseDate = (dateString) => {
-        if (!dateString || typeof dateString !== 'string') return null;
-        const parts = dateString.split(' ')[0].split('-');
-        if (parts.length === 3) {
-          // Assuming DD-MM-YYYY format
-          return `${parts[2]}-${parts[1]}-${parts[0]}`;
-        }
-        return dateString; // Return original if format is not as expected
-      };
-
-      const parsedDateandTime = DateandTime ? new Date(parseDate(DateandTime) + ' ' + (DateandTime.split(' ')[1] || '')) : null;
-      const parsedExpectedEndDate = expectedEndDate ? new Date(parseDate(expectedEndDate)) : null;
 
       const ticket = new Db.BookingTicket({
         selectcountry,
@@ -127,8 +142,8 @@ TicketRoute.post(
       console.error("POST error:", error.message);
       res.status(500).json({ message: "Server error", error: error.message });
     }
-  });
-
+  }
+);
 
 // ==============================
 // 📥 GET - Retrieve All Tickets
@@ -146,7 +161,6 @@ TicketRoute.get("/", async (req, res) => {
     res.status(500).json({ message: "Server error", error: error.message });
   }
 });
-
 
 // ==============================
 // ✏️ PUT - Update Ticket by ID
@@ -170,20 +184,8 @@ TicketRoute.put(
         return res.status(404).json({ message: "Ticket not found" });
       }
 
-      // Handle files (use old if new not uploaded)
       const beforeFile = req.files?.beforeAttachments?.[0]?.filename || existingTicket.beforeAttachments;
       const afterFile = req.files?.afterAttachments?.[0]?.filename || existingTicket.afterAttachments;
-
-      // Helper function to convert DD-MM-YYYY to YYYY-MM-DD
-      const parseDate = (dateString) => {
-        if (!dateString || typeof dateString !== 'string') return null;
-        const parts = dateString.split(' ')[0].split('-');
-        if (parts.length === 3) {
-          // Assuming DD-MM-YYYY format
-          return `${parts[2]}-${parts[1]}-${parts[0]}`;
-        }
-        return dateString; // Return original if format is not as expected
-      };
 
       const updatedFields = {
         ...req.body,
@@ -191,12 +193,21 @@ TicketRoute.put(
         afterAttachments: afterFile,
       };
 
-      if (updatedFields.DateandTime) updatedFields.DateandTime = new Date(parseDate(updatedFields.DateandTime) + ' ' + (updatedFields.DateandTime.split(' ')[1] || ''));
-      if (updatedFields.expectedEndDate) updatedFields.expectedEndDate = new Date(parseDate(updatedFields.expectedEndDate));
+      if (updatedFields.DateandTime) {
+        const parsedDateTimeStr = parseDate(updatedFields.DateandTime, true);
+        const parsedDateandTime = parsedDateTimeStr ? new Date(parsedDateTimeStr) : null;
+        if (!parsedDateandTime) {
+          return res.status(400).json({ message: 'Invalid DateandTime format. Please use DD-MM-YYYY HH:mm or a valid ISO date format.' });
+        }
+        updatedFields.DateandTime = parsedDateandTime;
+      }
 
-      const updatedTicket = await Db.BookingTicket.findByIdAndUpdate(ticketId, updatedFields, {
-        new: true,
-      });
+      if (updatedFields.expectedEndDate) {
+        const parsedEndDateStr = parseDate(updatedFields.expectedEndDate, false);
+        updatedFields.expectedEndDate = parsedEndDateStr ? new Date(parsedEndDateStr) : null;
+      }
+
+      const updatedTicket = await Db.BookingTicket.findByIdAndUpdate(ticketId, updatedFields, { new: true });
 
       res.status(200).json({
         message: "Ticket updated successfully",
@@ -208,7 +219,6 @@ TicketRoute.put(
     }
   }
 );
-
 
 // ==============================
 // 🗑️ DELETE - Delete Ticket & Files
@@ -226,7 +236,7 @@ TicketRoute.delete("/:id", async (req, res) => {
       return res.status(404).json({ message: "Ticket not found" });
     }
 
-    // Delete files
+    // Delete files from disk
     const deleteFile = (filename) => {
       if (!filename) return;
       const filePath = path.join(uploadDir, filename);

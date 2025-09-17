@@ -1,7 +1,7 @@
 let mongoose = require("mongoose");
 
 mongoose
-  .connect("mongodb://localhost:27017/ticketApp")
+  .connect("mongodb://localhost:27017/ticketest")
   .then((m) => {
     console.log("Mongo Db Connected Successfully");
   })
@@ -23,8 +23,8 @@ const BookTic = new mongoose.Schema({
   category: { type: String, required: true },
   jobDescription: { type: String, required: true },
   location: { type: String, required: true },
-  beforeAttachments: { type: String, required: true }, 
-  afterAttachments: { type: String, required: true },  
+  beforeAttachments: { type: String }, 
+  afterAttachments: { type: String },  
   ticketStatus: { type: String, required: true },
   totalbookings: { type: Number, required: true }
 }, { timestamps: true });
