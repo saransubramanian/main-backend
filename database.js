@@ -12,13 +12,13 @@ mongoose
 const BookTic = new mongoose.Schema({
  
   selectcountry: { type: String, required: true },
-  storeName: { type: String, required: true },
+  ticketid: { type: String, required: true }, 
+  DateandTime: { type: Date, required: true, default: Date.now },     
+  stores:{type: String, required: true },
   booking: { type: String, required: true},
-  stores: { type: String, required: true },
+  storeName: { type: String, required: true },
   bookingsummary: { type: String, required: true },
   title: { type: String, required: true },
-  DateandTime: { type: Date, required: true, default: Date.now },
-  ticketid: { type: String, required: true },         
   expectedEndDate: { type: Date, required: true },
   category: { type: String, required: true },
   jobDescription: { type: String, required: true },
